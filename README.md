@@ -37,7 +37,7 @@ Tạo dữ liệu mẫu cho phòng, danh mục, thiết bị, lịch học, phi�
 python -m api.cli seed-demo
 ```
 
-Seed tạo 30 tài khoản Người dùng (`BORROWER`), 1 tài khoản Nhà trường (`ADMIN`) và 5 tài khoản Người vận hành (`TECHNICIAN`). Hồ sơ có họ tên, chức danh và mã định danh mẫu. Ba tài khoản tiện dùng cho đăng nhập nhanh:
+Seed tạo 30 tài khoản Người dùng (`BORROWER`), 1 tài khoản Nhà trường (`ADMIN`) và 5 tài khoản Người vận hành (`TECHNICIAN`). Hồ sơ có họ tên, chức danh và mã định danh mẫu. Bộ dữ liệu có 34 phiếu mượn để biểu đồ thể hiện rõ tỷ lệ giữa các trạng thái: 4 chờ duyệt, 5 đã duyệt, 2 bị từ chối, 6 đang mượn, 8 đã trả, 7 quá hạn và 2 đã hủy. Lệnh seed có thể chạy lại mà không nhân bản các phiếu mẫu. Ba tài khoản tiện dùng cho đăng nhập nhanh:
 
 | Vai trò | Email | Mật khẩu |
 |---|---|---|

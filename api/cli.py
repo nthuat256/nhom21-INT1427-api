@@ -4,7 +4,12 @@ from getpass import getpass
 from sqlalchemy import select
 
 from api.database import Base, SessionLocal, engine
-from api.demo_data import QUICK_LOGIN_ACCOUNTS, SAMPLE_ACCOUNTS, seed_sample_data
+from api.demo_data import (
+    LOAN_SAMPLE_COUNTS,
+    QUICK_LOGIN_ACCOUNTS,
+    SAMPLE_ACCOUNTS,
+    seed_sample_data,
+)
 from api.models import Role, User
 from api.security import hash_password
 
@@ -41,8 +46,12 @@ def seed_demo() -> None:
             "Sample data ready: "
             f"{counts['borrowers']} users, {counts['operators']} operators, "
             f"{counts['rooms']} rooms, {counts['devices']} devices, "
-            f"{counts['loan_statuses']} loan statuses, "
+            f"{counts['loan_requests']} loan requests across {counts['loan_statuses']} statuses, "
             f"{counts['maintenance_statuses']} maintenance statuses."
+        )
+        print(
+            "Loan status distribution: "
+            + ", ".join(f"{status.value}={count}" for status, count in LOAN_SAMPLE_COUNTS.items())
         )
         print(f"All sample accounts use password: {SAMPLE_ACCOUNTS[0][2]}")
         print("Quick-login accounts:")

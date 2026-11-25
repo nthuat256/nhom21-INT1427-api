@@ -107,7 +107,7 @@ CATEGORIES = (
 )
 
 DEVICES = (
-    ("MAU-LT-A101-001", "Máy tính xách tay Dell Latitude", "Máy tính thực hành cài sẵn bộ công cụ học tập.", "Máy tính - Thực hành", "MAU-A101", 20, 17, DeviceStatus.AVAILABLE, ("DEMO-DEVICE-001",)),
+    ("MAU-LT-A101-001", "Máy tính xách tay Dell Latitude", "Máy tính thực hành cài sẵn bộ công cụ học tập.", "Máy tính - Thực hành", "MAU-A101", 20, 2, DeviceStatus.AVAILABLE, ("DEMO-DEVICE-001",)),
     ("MAU-MC-B202-001", "Máy chiếu Epson PowerLite", "Máy chiếu phục vụ bài giảng và báo cáo.", "Thiết bị trình chiếu - Thực hành", "MAU-B202", 5, 5, DeviceStatus.AVAILABLE, ()),
     ("MAU-OSC-C303-001", "Máy hiện sóng Rigol", "Máy hiện sóng số dùng trong thực hành điện tử.", "Thiết bị đo lường - Thực hành", "MAU-C303", 3, 3, DeviceStatus.AVAILABLE, ()),
     ("MAU-ARD-A101-001", "Bộ kit Arduino Uno", "Bộ vi điều khiển phục vụ học phần IoT.", "Dụng cụ điện tử - Thực hành", "MAU-A101", 12, 12, DeviceStatus.AVAILABLE, ()),
@@ -123,6 +123,18 @@ SCHEDULES = (
     ("MAU-DT101-TH01", "Điện tử cơ bản - Thực hành", "DT101", "MAU-B202", 1, 5, 13, True, ()),
     ("MAU-MM101-TH01", "Sản xuất đa phương tiện", "MM101", "MAU-C303", 2, 6, 9, True, ()),
 )
+
+LOAN_SCENARIOS = (
+    (LoanStatus.PENDING, "Mẫu: yêu cầu đang chờ duyệt", 4),
+    (LoanStatus.APPROVED, "Mẫu: đã duyệt theo lịch học", 5),
+    (LoanStatus.REJECTED, "Mẫu: yêu cầu bị từ chối", 2),
+    (LoanStatus.CHECKED_OUT, "Mẫu: thiết bị đang được mượn", 6),
+    (LoanStatus.RETURNED, "Mẫu: phiếu mượn đã hoàn trả", 8),
+    (LoanStatus.OVERDUE, "Mẫu: phiếu mượn quá hạn", 7),
+    (LoanStatus.CANCELLED, "Mẫu: yêu cầu đã hủy", 2),
+)
+
+LOAN_SAMPLE_COUNTS = {status: count for status, _, count in LOAN_SCENARIOS}
 
 
 def _upsert_named(db: Session, model, field, value: str, aliases: tuple[str, ...] = ()):
@@ -210,15 +222,6 @@ def _seed_loans(
     now: datetime,
 ):
     scheduled = schedules["MAU-IT205-TH01"]
-    cases = (
-        ("Mẫu: yêu cầu đang chờ duyệt", 1, "MAU-A101", LoanStatus.PENDING, now + timedelta(days=6), None, None, None, None, None),
-        ("Mẫu: đã duyệt theo lịch học", 0, "MAU-A101", LoanStatus.APPROVED, scheduled.starts_at + timedelta(minutes=15), scheduled.id, school.id, None, None, None),
-        ("Mẫu: yêu cầu bị từ chối", 2, "MAU-A101", LoanStatus.REJECTED, now + timedelta(days=8), None, school.id, "Thiết bị đã được bố trí cho lớp học khác.", None, None),
-        ("Mẫu: thiết bị đang được mượn", 3, "MAU-A101", LoanStatus.CHECKED_OUT, now - timedelta(days=1), None, None, None, now - timedelta(days=1), None),
-        ("Mẫu: phiếu mượn đã hoàn trả", 4, "MAU-A101", LoanStatus.RETURNED, now - timedelta(days=8), None, school.id, None, now - timedelta(days=7), now - timedelta(days=6)),
-        ("Mẫu: phiếu mượn quá hạn", 5, "MAU-A101", LoanStatus.OVERDUE, now - timedelta(days=5), None, None, None, now - timedelta(days=4), None),
-        ("Mẫu: yêu cầu đã hủy", 6, "MAU-A101", LoanStatus.CANCELLED, now + timedelta(days=10), None, None, None, None, None),
-    )
     action_by_status = {
         LoanStatus.PENDING: "loan.created",
         LoanStatus.APPROVED: "loan.approved",
@@ -238,64 +241,99 @@ def _seed_loans(
         LoanStatus.CANCELLED: ("Yêu cầu mượn đã hủy", "Phiếu mượn đã được hủy."),
     }
     now = now.replace(microsecond=0)
-    for marker, borrower_index, room_code, status, starts_at, schedule_id, reviewer_id, rejection, checked_out_at, returned_at in cases:
-        loan = db.scalar(select(LoanRequest).where(LoanRequest.reason == marker))
-        if loan is None:
-            loan = LoanRequest(requester_id=borrowers[borrower_index].id, room_id=rooms[room_code].id)
-            db.add(loan)
-        loan.requester_id = borrowers[borrower_index].id
-        loan.room_id = rooms[room_code].id
-        loan.starts_at = starts_at.replace(microsecond=0)
-        loan.due_at = (
-            schedules["MAU-IT205-TH01"].ends_at
-            if schedule_id
-            else now + timedelta(days=1)
-            if status == LoanStatus.CHECKED_OUT
-            else starts_at + timedelta(days=4)
-            if status == LoanStatus.OVERDUE
-            else starts_at + timedelta(days=5)
-            if status == LoanStatus.RETURNED
-            else starts_at + timedelta(hours=2)
-        ).replace(microsecond=0)
-        loan.reason = marker
-        loan.status = status
-        loan.matched_schedule_id = schedule_id
-        loan.reviewed_by = reviewer_id
-        loan.rejection_reason = rejection
-        loan.checked_out_at = checked_out_at
-        loan.returned_at = returned_at
-        db.flush()
+    borrower_index = 0
+    for status, marker_prefix, count in LOAN_SCENARIOS:
+        for sample_number in range(1, count + 1):
+            marker = marker_prefix if sample_number == 1 else f"{marker_prefix} {sample_number:02d}"
+            requester = borrowers[borrower_index % len(borrowers)]
+            borrower_index += 1
+            schedule_id = None
+            reviewer_id = None
+            rejection = None
+            checked_out_at = None
+            returned_at = None
 
-        detail = db.scalar(
-            select(LoanDetail).where(
-                LoanDetail.loan_request_id == loan.id,
-                LoanDetail.device_id == device.id,
+            if status == LoanStatus.PENDING:
+                starts_at = now + timedelta(days=6, hours=sample_number)
+                due_at = starts_at + timedelta(hours=2)
+            elif status == LoanStatus.APPROVED:
+                starts_at = scheduled.starts_at + timedelta(minutes=15 * sample_number)
+                due_at = scheduled.ends_at
+                schedule_id = scheduled.id
+                reviewer_id = school.id
+            elif status == LoanStatus.REJECTED:
+                starts_at = now + timedelta(days=8 + sample_number)
+                due_at = starts_at + timedelta(hours=2)
+                reviewer_id = school.id
+                rejection = "Thiết bị đã được bố trí cho lớp học khác."
+            elif status == LoanStatus.CHECKED_OUT:
+                starts_at = now - timedelta(days=1, hours=sample_number)
+                due_at = now + timedelta(days=1)
+                checked_out_at = starts_at
+                reviewer_id = school.id
+            elif status == LoanStatus.RETURNED:
+                starts_at = now - timedelta(days=8 + sample_number)
+                due_at = starts_at + timedelta(days=5)
+                checked_out_at = starts_at + timedelta(days=1)
+                returned_at = starts_at + timedelta(days=2)
+                reviewer_id = school.id
+            elif status == LoanStatus.OVERDUE:
+                starts_at = now - timedelta(days=5 + sample_number)
+                due_at = starts_at + timedelta(days=4)
+                checked_out_at = starts_at + timedelta(days=1)
+                reviewer_id = school.id
+            else:
+                starts_at = now + timedelta(days=10 + sample_number)
+                due_at = starts_at + timedelta(hours=2)
+
+            loan = db.scalar(select(LoanRequest).where(LoanRequest.reason == marker))
+            if loan is None:
+                loan = LoanRequest(requester_id=requester.id, room_id=rooms["MAU-A101"].id)
+                db.add(loan)
+            loan.requester_id = requester.id
+            loan.room_id = rooms["MAU-A101"].id
+            loan.starts_at = starts_at.replace(microsecond=0)
+            loan.due_at = due_at.replace(microsecond=0)
+            loan.reason = marker
+            loan.status = status
+            loan.matched_schedule_id = schedule_id
+            loan.reviewed_by = reviewer_id
+            loan.rejection_reason = rejection
+            loan.checked_out_at = checked_out_at
+            loan.returned_at = returned_at
+            db.flush()
+
+            detail = db.scalar(
+                select(LoanDetail).where(
+                    LoanDetail.loan_request_id == loan.id,
+                    LoanDetail.device_id == device.id,
+                )
             )
-        )
-        if detail is None:
-            detail = LoanDetail(loan_request_id=loan.id, device_id=device.id, quantity=1)
-            db.add(detail)
-        detail.quantity = 1
-        detail.quantity_returned = 1 if status == LoanStatus.RETURNED else 0
+            if detail is None:
+                detail = LoanDetail(loan_request_id=loan.id, device_id=device.id, quantity=1)
+                db.add(detail)
+            detail.quantity = 1
+            detail.quantity_returned = 1 if status == LoanStatus.RETURNED else 0
 
-        _upsert_audit(
-            db,
-            reviewer_id or borrowers[borrower_index].id,
-            action_by_status[status],
-            "loan_request",
-            loan.id,
-            {"sample": True, "status": status.value},
-        )
-        title, message = notification_copy[status]
-        _upsert_notification(
-            db,
-            borrowers[borrower_index].id,
-            "loan_request",
-            loan.id,
-            title,
-            message,
-            is_read=status in {LoanStatus.APPROVED, LoanStatus.REJECTED, LoanStatus.RETURNED, LoanStatus.CANCELLED},
-        )
+            _upsert_audit(
+                db,
+                reviewer_id or requester.id,
+                action_by_status[status],
+                "loan_request",
+                loan.id,
+                {"sample": True, "status": status.value},
+            )
+            title, message = notification_copy[status]
+            _upsert_notification(
+                db,
+                requester.id,
+                "loan_request",
+                loan.id,
+                title,
+                message,
+                is_read=status in {LoanStatus.APPROVED, LoanStatus.REJECTED, LoanStatus.RETURNED, LoanStatus.CANCELLED},
+            )
+    return sum(count for _, _, count in LOAN_SCENARIOS)
 
 
 def _seed_maintenance(db: Session, school: User, operators: list[User], devices: dict[str, Device]):
@@ -436,7 +474,7 @@ def seed_sample_data(db: Session) -> dict[str, int]:
         schedules[code] = schedule
     db.flush()
 
-    _seed_loans(
+    loan_count = _seed_loans(
         db,
         borrowers,
         school,
@@ -464,6 +502,7 @@ def seed_sample_data(db: Session) -> dict[str, int]:
         "operators": len(operators),
         "rooms": len(rooms),
         "devices": len(devices),
+        "loan_requests": loan_count,
         "loan_statuses": len(LoanStatus),
         "maintenance_statuses": len(MaintenanceStatus),
     }

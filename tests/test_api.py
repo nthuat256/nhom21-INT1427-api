@@ -302,6 +302,7 @@ class EquipmentApiTests(unittest.TestCase):
         from api.demo_data import (
             BORROWER_ACCOUNTS,
             OPERATOR_ACCOUNTS,
+            LOAN_SAMPLE_COUNTS,
             QUICK_LOGIN_ACCOUNTS,
             SAMPLE_ACCOUNTS,
             SCHOOL_ACCOUNT,
@@ -348,20 +349,26 @@ class EquipmentApiTests(unittest.TestCase):
         self.assertEqual(SAMPLE_PASSWORD, QUICK_LOGIN_ACCOUNTS[0][2])
 
         with SessionLocal() as db:
-            self.assertEqual(
-                db.query(LoanRequest).filter(LoanRequest.reason.like("Mẫu:%")).count(),
-                len(LoanStatus),
-            )
-            sample_statuses = {
-                loan.status
-                for loan in db.query(LoanRequest).filter(LoanRequest.reason.like("Mẫu:%")).all()
+            sample_loans = [
+                loan for loan in db.query(LoanRequest).all()
+                if loan.reason and loan.reason.startswith("Mẫu:")
+            ]
+            self.assertEqual(len(sample_loans), sum(LOAN_SAMPLE_COUNTS.values()))
+            sample_status_counts = {
+                status: sum(loan.status == status for loan in sample_loans)
+                for status in LoanStatus
             }
+            self.assertEqual(sample_status_counts, LOAN_SAMPLE_COUNTS)
+            sample_statuses = {loan.status for loan in sample_loans}
             self.assertEqual(sample_statuses, set(LoanStatus))
-            sample_maintenance = (
-                db.query(MaintenanceRecord)
-                .filter(MaintenanceRecord.description.like("Mẫu bảo trì:%"))
-                .all()
-            )
+            sample_device = db.query(Device).filter_by(asset_tag="MAU-LT-A101-001").one()
+            self.assertEqual(sample_device.quantity_total, 20)
+            self.assertEqual(sample_device.quantity_available, 2)
+
+            sample_maintenance = [
+                record for record in db.query(MaintenanceRecord).all()
+                if record.description.startswith("Mẫu bảo trì:")
+            ]
             self.assertEqual(len(sample_maintenance), len(MaintenanceStatus))
             self.assertEqual(
                 db.query(MaintenanceUpdate)
