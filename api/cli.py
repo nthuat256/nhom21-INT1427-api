@@ -1,11 +1,11 @@
 import argparse
-from datetime import datetime, timedelta, timezone
 from getpass import getpass
 
 from sqlalchemy import select
 
 from api.database import Base, SessionLocal, engine
-from api.models import Category, Device, DeviceStatus, Role, Room, Schedule, User
+from api.demo_data import QUICK_LOGIN_ACCOUNTS, SAMPLE_ACCOUNTS, seed_sample_data
+from api.models import Role, User
 from api.security import hash_password
 
 
@@ -35,41 +35,19 @@ def seed_demo() -> None:
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:
-        room = db.scalar(select(Room).where(Room.code == "LAB-DEMO"))
-        if not room:
-            room = Room(code="LAB-DEMO", name="Demonstration Lab", location="Building A", capacity=30)
-            db.add(room)
-            db.flush()
-        category = db.scalar(select(Category).where(Category.name == "Demo peripherals"))
-        if not category:
-            category = Category(name="Demo peripherals", description="Optional sample inventory category")
-            db.add(category)
-            db.flush()
-        device = db.scalar(select(Device).where(Device.asset_tag == "DEMO-DEVICE-001"))
-        if not device:
-            db.add(Device(
-                asset_tag="DEMO-DEVICE-001",
-                name="Demo presentation remote",
-                category_id=category.id,
-                room_id=room.id,
-                quantity_total=5,
-                quantity_available=5,
-                status=DeviceStatus.AVAILABLE,
-            ))
-        schedule = db.scalar(select(Schedule).where(Schedule.course_code == "DEMO101"))
-        if not schedule:
-            start = (datetime.now(timezone.utc) + timedelta(days=7)).replace(
-                hour=9, minute=0, second=0, microsecond=0
-            )
-            db.add(Schedule(
-                course_name="Demonstration laboratory class",
-                course_code="DEMO101",
-                room_id=room.id,
-                starts_at=start,
-                ends_at=start + timedelta(hours=2),
-            ))
+        counts = seed_sample_data(db)
         db.commit()
-        print("Demo room, category, device, and future schedule are ready.")
+        print(
+            "Sample data ready: "
+            f"{counts['borrowers']} users, {counts['operators']} operators, "
+            f"{counts['rooms']} rooms, {counts['devices']} devices, "
+            f"{counts['loan_statuses']} loan statuses, "
+            f"{counts['maintenance_statuses']} maintenance statuses."
+        )
+        print(f"All sample accounts use password: {SAMPLE_ACCOUNTS[0][2]}")
+        print("Quick-login accounts:")
+        for email, _, _, role, _ in QUICK_LOGIN_ACCOUNTS:
+            print(f"  {role.value}: {email}")
     finally:
         db.close()
 
@@ -80,7 +58,7 @@ def main() -> None:
     admin = commands.add_parser("create-admin", help="Create an administrator account")
     admin.add_argument("--email", required=True)
     admin.add_argument("--name", required=True)
-    commands.add_parser("seed-demo", help="Insert optional demonstration room/category/device")
+    commands.add_parser("seed-demo", help="Seed local sample accounts and lending/maintenance scenarios")
     args = parser.parse_args()
     if args.command == "create-admin":
         create_admin(args.email, args.name)

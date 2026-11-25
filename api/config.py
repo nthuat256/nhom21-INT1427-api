@@ -15,11 +15,8 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_minutes: int = 30
     refresh_token_days: int = 7
-    cors_origins: str = "http://localhost:3000,http://localhost:5173"
+    cors_origins: str = "http://localhost:3000,http://localhost:5173,http://localhost:5500,http://127.0.0.1:5500"
     overdue_check_interval_seconds: int = 300
-    oidc_issuer: str | None = None
-    oidc_client_id: str | None = None
-    oidc_jwks_url: str | None = None
 
 
 @lru_cache

@@ -31,11 +31,21 @@ Tạo tài khoản quản trị đầu tiên bằng prompt mật khẩu (không 
 python -m api.cli create-admin --email admin@university.edu --name "System Administrator"
 ```
 
-Seed phòng, danh mục, thiết bị và lịch học minh họa tùy chọn (không tạo user/mật khẩu mặc định):
+Tạo dữ liệu mẫu cho phòng, danh mục, thiết bị, lịch học, phiếu mượn/bảo trì ở mọi trạng thái và tài khoản theo ba vai trò:
 
 ```powershell
 python -m api.cli seed-demo
 ```
+
+Seed tạo 30 tài khoản Người dùng (`BORROWER`), 1 tài khoản Nhà trường (`ADMIN`) và 5 tài khoản Người vận hành (`TECHNICIAN`). Hồ sơ có họ tên, chức danh và mã định danh mẫu. Ba tài khoản tiện dùng cho đăng nhập nhanh:
+
+| Vai trò | Email | Mật khẩu |
+|---|---|---|
+| Người dùng (`BORROWER`) — Trần Văn Bình, Sinh viên | `tran.van.binh@university.edu` | `LabEquip123!` |
+| Nhà trường (`ADMIN`) — Nguyễn Thị Lan, Cán bộ nhà trường | `nguyen.thi.lan@university.edu` | `LabEquip123!` |
+| Người vận hành (`TECHNICIAN`) — Lê Quốc Huy, Kỹ thuật viên thiết bị | `le.quoc.huy@university.edu` | `LabEquip123!` |
+
+Các tài khoản còn lại được định nghĩa tập trung trong `api/demo_data.py` và xuất hiện trong danh sách người dùng sau khi seed. Chạy lại seed sẽ đặt lại thông tin, mật khẩu và vai trò của tài khoản mẫu, đồng thời cập nhật dữ liệu minh họa theo các trạng thái chuẩn. Chỉ dùng dữ liệu/mật khẩu này trong môi trường phát triển local, không dùng trên môi trường thật.
 
 ## Cấu trúc
 
@@ -46,7 +56,7 @@ api/
   controllers/loans.py               Shared loan lookup and owner authorization
   middlewares/security_headers.py    API security response headers and request ID
   validators/schemas.py              Request/response validation
-  routes/auth.py                     Register, OAuth2 token, refresh, OIDC, profile
+  routes/auth.py                     Register, OAuth2 token, refresh, profile
   routes/resources.py                Users, rooms, categories, devices, schedules, settings
   routes/operations.py               Loans, loan details, maintenance, notifications, audit
   services/loan_service.py           Inventory reservation, approve/return transactions
@@ -79,9 +89,7 @@ PK là UUID dạng chuỗi; FK dùng `ON DELETE` phù hợp để bảo vệ l�
 | `ADMIN` | Quản lý người dùng, phòng, danh mục, thiết bị, lịch, settings; quyết định mượn; bàn giao/nhận trả; báo hỏng; xem audit |
 | `TECHNICIAN` | Xem hồ sơ bảo trì; tiếp nhận và cập nhật tiến độ/kiểm định |
 
-Đăng ký luôn cấp `BORROWER`; không nhận role từ body. Tạo admin bằng CLI. `POST /api/v1/auth/token` dùng OAuth2 password form, trả access JWT (mặc định 30 phút) và refresh JWT. Bảo vệ API bằng `Authorization: Bearer <access_token>`. Refresh gửi form `refresh_token`.
-
-OIDC tùy chọn: cấu hình `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_JWKS_URL`; client OIDC thực hiện Authorization Code + PKCE, sau đó gửi `id_token` và nonce một lần tới `POST /api/v1/auth/oidc`. API xác thực chữ ký RS256, issuer, audience, nonce và email verified. Chỉ bật HTTPS và chỉ tin cậy JWKS URL của IdP đã cấu hình.
+Đăng ký luôn cấp `BORROWER`; không nhận role từ body. Tạo admin bằng CLI. `POST /api/v1/auth/token` dùng OAuth2 password form, chỉ chấp nhận email và mật khẩu hợp lệ, trả access JWT (mặc định 30 phút) và refresh JWT. Bảo vệ API bằng `Authorization: Bearer <access_token>`. Refresh gửi form `refresh_token`.
 
 ## Quy tắc mượn/trả và bảo trì
 
@@ -98,7 +106,7 @@ Tất cả collection hỗ trợ `page` (1-based), `page_size` (tối đa 100; a
 
 | Nhóm | Endpoint | Quyền |
 |---|---|---|
-| Auth | `POST /auth/register`, `POST /auth/token`, `POST /auth/refresh`, `POST /auth/oidc`, `GET /auth/me` | Public / account |
+| Auth | `POST /auth/register`, `POST /auth/token`, `POST /auth/refresh`, `GET /auth/me` | Public / account |
 | Users | `GET /users`, `GET /users/{id}`, `PATCH /users/{id}` | Admin |
 | Rooms | `GET/POST /rooms`, `GET/PATCH/DELETE /rooms/{id}` | đọc có token / Admin ghi |
 | Categories | `GET/POST /categories`, `GET/PATCH/DELETE /categories/{id}` | đọc có token / Admin ghi |
@@ -146,4 +154,4 @@ docker compose up --build
 
 ## Vận hành/bảo mật
 
-Đặt `JWT_SECRET` ngẫu nhiên, dài, riêng biệt; nếu không khai báo, API tạo secret ngẫu nhiên mới mỗi lần khởi động (token cũ sẽ hết hiệu lực). Không dùng mật khẩu mặc định của Compose trên môi trường chia sẻ. Đặt HTTPS sau reverse proxy, giới hạn `CORS_ORIGINS`, bảo vệ backup DB, giám sát logs và cấu hình OIDC issuer/JWKS đáng tin. MySQL root/password trong Compose chỉ là cấu hình local có thể override bằng biến môi trường.
+Đặt `JWT_SECRET` ngẫu nhiên, dài, riêng biệt; nếu không khai báo, API tạo secret ngẫu nhiên mới mỗi lần khởi động (token cũ sẽ hết hiệu lực). Không dùng mật khẩu mặc định của Compose trên môi trường chia sẻ. Đặt HTTPS sau reverse proxy, giới hạn `CORS_ORIGINS`, bảo vệ backup DB và giám sát logs. MySQL root/password trong Compose chỉ là cấu hình local có thể override bằng biến môi trường.

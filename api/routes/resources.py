@@ -372,9 +372,10 @@ def delete_schedule(schedule_id: str, db: Session = Depends(get_db), actor: User
     db.commit()
 
 
-@router.get("/settings", response_model=dict)
+@router.get("/settings", response_model=dict[str, list[SettingRead]])
 def list_settings(db: Session = Depends(get_db), _: User = Depends(admin_only)):
-    return {"items": db.scalars(select(Setting).order_by(Setting.key)).all()}
+    items = db.scalars(select(Setting).order_by(Setting.key)).all()
+    return {"items": [SettingRead.model_validate(item) for item in items]}
 
 
 @router.put("/settings/{key}", response_model=SettingRead)

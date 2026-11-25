@@ -70,7 +70,6 @@ class User(TimestampMixin, Base):
     role: Mapped[Role] = mapped_column(Enum(Role), default=Role.BORROWER, index=True)
     student_or_staff_id: Mapped[str | None] = mapped_column(String(64), unique=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    oidc_subject: Mapped[str | None] = mapped_column(String(255), unique=True)
 
 
 class Room(TimestampMixin, Base):

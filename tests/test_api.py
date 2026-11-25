@@ -14,7 +14,7 @@ from api.database import SessionLocal, engine
 from api.main import app
 from api.models import (
     Category, Device, DeviceStatus, LoanRequest, LoanStatus, Notification, Role, Room,
-    Schedule, User,
+    MaintenanceRecord, MaintenanceStatus, MaintenanceUpdate, Schedule, User,
 )
 from api.security import hash_password
 
@@ -268,6 +268,107 @@ class EquipmentApiTests(unittest.TestCase):
             headers={"Authorization": f"Bearer {self.borrower_token}"},
         )
         self.assertEqual(response.status_code, 403)
+
+    def test_registered_account_logs_in_with_borrower_permissions(self):
+        self.assertEqual(self.client.post("/api/v1/auth/oidc", json={}).status_code, 404)
+        account = {
+            "email": "new.user@example.com",
+            "full_name": "New User",
+            "password": "new-user-test-pass",
+            "role": "ADMIN",
+        }
+        created = self.client.post("/api/v1/auth/register", json=account)
+        self.assertEqual(created.status_code, 201, created.text)
+        self.assertEqual(created.json()["role"], Role.BORROWER.value)
+        duplicate = self.client.post(
+            "/api/v1/auth/register",
+            json={**account, "email": account["email"].upper()},
+        )
+        self.assertEqual(duplicate.status_code, 409)
+
+        invalid_login = self.client.post(
+            "/api/v1/auth/token",
+            data={"username": account["email"], "password": "incorrect-password"},
+        )
+        self.assertEqual(invalid_login.status_code, 401)
+        token = self._login(account["email"], account["password"])
+        headers = {"Authorization": f"Bearer {token}"}
+        profile = self.client.get("/api/v1/auth/me", headers=headers)
+        self.assertEqual(profile.json()["role"], Role.BORROWER.value)
+        self.assertEqual(self.client.get("/api/v1/users", headers=headers).status_code, 403)
+
+    def test_demo_seed_creates_full_role_data_and_is_idempotent(self):
+        from api.cli import seed_demo
+        from api.demo_data import (
+            BORROWER_ACCOUNTS,
+            OPERATOR_ACCOUNTS,
+            QUICK_LOGIN_ACCOUNTS,
+            SAMPLE_ACCOUNTS,
+            SCHOOL_ACCOUNT,
+            SAMPLE_PASSWORD,
+        )
+
+        seed_demo()
+        with SessionLocal() as db:
+            sample_role_counts = {role: 0 for role in Role}
+            for email, full_name, _, role, staff_id in SAMPLE_ACCOUNTS:
+                account = db.query(User).filter_by(email=email).one()
+                self.assertEqual(account.full_name, full_name)
+                self.assertEqual(account.role, role)
+                self.assertEqual(account.student_or_staff_id, staff_id)
+                sample_role_counts[account.role] += 1
+            self.assertEqual(len(BORROWER_ACCOUNTS), 30)
+            self.assertEqual(len(OPERATOR_ACCOUNTS), 5)
+            self.assertEqual(sample_role_counts[Role.BORROWER], 30)
+            self.assertEqual(sample_role_counts[Role.ADMIN], 1)
+            self.assertEqual(sample_role_counts[Role.TECHNICIAN], 5)
+
+            demo_user = db.query(User).filter_by(email=QUICK_LOGIN_ACCOUNTS[0][0]).one()
+            demo_user.password_hash = hash_password("ChangedDemoPass123!")
+            demo_user.role = Role.ADMIN
+            demo_user.is_active = False
+            db.commit()
+        seed_demo()
+
+        tokens = {}
+        for email, _, password, role, _ in QUICK_LOGIN_ACCOUNTS:
+            token = self._login(email, password)
+            tokens[role.value] = {"Authorization": f"Bearer {token}"}
+            profile = self.client.get("/api/v1/auth/me", headers=tokens[role.value])
+            self.assertEqual(profile.status_code, 200, profile.text)
+            self.assertEqual(profile.json()["role"], role.value)
+
+        settings = self.client.get("/api/v1/settings", headers=tokens["ADMIN"])
+        self.assertEqual(settings.status_code, 200, settings.text)
+        self.assertEqual(len(settings.json()["items"]), 2)
+        self.assertEqual(self.client.get("/api/v1/settings", headers=tokens["BORROWER"]).status_code, 403)
+        self.assertEqual(self.client.get("/api/v1/maintenance", headers=tokens["TECHNICIAN"]).status_code, 200)
+        self.assertEqual(self.client.get("/api/v1/loan-requests", headers=tokens["TECHNICIAN"]).status_code, 403)
+        self.assertEqual(QUICK_LOGIN_ACCOUNTS[1], SCHOOL_ACCOUNT)
+        self.assertEqual(SAMPLE_PASSWORD, QUICK_LOGIN_ACCOUNTS[0][2])
+
+        with SessionLocal() as db:
+            self.assertEqual(
+                db.query(LoanRequest).filter(LoanRequest.reason.like("Mẫu:%")).count(),
+                len(LoanStatus),
+            )
+            sample_statuses = {
+                loan.status
+                for loan in db.query(LoanRequest).filter(LoanRequest.reason.like("Mẫu:%")).all()
+            }
+            self.assertEqual(sample_statuses, set(LoanStatus))
+            sample_maintenance = (
+                db.query(MaintenanceRecord)
+                .filter(MaintenanceRecord.description.like("Mẫu bảo trì:%"))
+                .all()
+            )
+            self.assertEqual(len(sample_maintenance), len(MaintenanceStatus))
+            self.assertEqual(
+                db.query(MaintenanceUpdate)
+                .filter(MaintenanceUpdate.maintenance_id.in_([record.id for record in sample_maintenance]))
+                .count(),
+                sum(range(1, len(MaintenanceStatus) + 1)),
+            )
 
 
 if __name__ == "__main__":

@@ -57,11 +57,6 @@ class TokenRead(BaseModel):
     token_type: str = "bearer"
 
 
-class OIDCLoginInput(BaseModel):
-    id_token: str = Field(min_length=20)
-    nonce: str = Field(min_length=16, max_length=256)
-
-
 class RoomCreate(BaseModel):
     code: str = Field(min_length=1, max_length=40)
     name: str = Field(min_length=1, max_length=160)
